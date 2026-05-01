@@ -1,8 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
 
-const apiBase = import.meta.env.DEV ? 'http://localhost:4000/api' : '/api';
+const users = [
+  { username: 'admin', password: 'admin123', role: 'admin', name: 'Administrator', dept: '' },
+  { username: 'employee1', password: 'emp123', role: 'employee', name: 'Alice Johnson', dept: 'HR' },
+  { username: 'employee2', password: 'emp456', role: 'employee', name: 'Bob Smith', dept: 'Engineering' }
+];
+
 const initialForm = { type: 'Casual', from: '', to: '', reason: '' };
 const initialLogin = { username: '', password: '' };
+
+function readLeaves() {
+  try {
+    const raw = localStorage.getItem('leaves');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLeaves(leaves) {
+  localStorage.setItem('leaves', JSON.stringify(leaves));
+}
 
 function App() {
   const [user, setUser] = useState(() => {
@@ -22,30 +40,21 @@ function App() {
 
   useEffect(() => {
     if (user) {
-      fetchLeaves();
+      loadLeaves();
     }
   }, [user]);
 
-  const fetchLeaves = async () => {
-    if (!user) return;
+  const loadLeaves = () => {
     setLoading(true);
-
-    try {
-      let url = `${apiBase}/leaves`;
-      if (user.role === 'employee') {
-        url += `?username=${encodeURIComponent(user.username)}`;
-      }
-      const res = await fetch(url);
-      const data = await res.json();
-      setLeaves(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    const allLeaves = readLeaves();
+    const visibleLeaves = user?.role === 'employee'
+      ? allLeaves.filter((leave) => leave.submittedBy === user.username)
+      : allLeaves;
+    setLeaves(visibleLeaves);
+    setLoading(false);
   };
 
-  const handleLogin = async (event) => {
+  const handleLogin = (event) => {
     event.preventDefault();
     setLoginError('');
 
@@ -54,29 +63,21 @@ function App() {
       return;
     }
 
-    try {
-      const res = await fetch(`${apiBase}/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(loginData)
-      });
+    const matchedUser = users.find(
+      (item) => item.username === loginData.username && item.password === loginData.password
+    );
 
-      if (!res.ok) {
-        const body = await res.json();
-        setLoginError(body.error || 'Invalid credentials.');
-        return;
-      }
-
-      const loggedUser = await res.json();
-      setUser(loggedUser);
-      localStorage.setItem('leaveAppUser', JSON.stringify(loggedUser));
-      setPage('dashboard');
-      setLoginData(initialLogin);
-      setForm(initialForm);
-    } catch (err) {
-      setLoginError('Unable to login.');
-      console.error(err);
+    if (!matchedUser) {
+      setLoginError('Invalid username or password.');
+      return;
     }
+
+    const safeUser = { username: matchedUser.username, role: matchedUser.role, name: matchedUser.name, dept: matchedUser.dept };
+    setUser(safeUser);
+    localStorage.setItem('leaveAppUser', JSON.stringify(safeUser));
+    setPage('dashboard');
+    setLoginData(initialLogin);
+    setForm(initialForm);
   };
 
   const handleLogout = () => {
@@ -88,7 +89,7 @@ function App() {
     localStorage.removeItem('leaveAppUser');
   };
 
-  const handleSubmit = async (event) => {
+  const handleSubmit = (event) => {
     event.preventDefault();
     setError('');
 
@@ -97,40 +98,33 @@ function App() {
       return;
     }
 
-    try {
-      await fetch(`${apiBase}/leaves`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          submittedBy: user.username,
-          name: user.name,
-          dept: user.dept,
-          type: form.type,
-          from: form.from,
-          to: form.to,
-          reason: form.reason
-        })
-      });
-      setForm(initialForm);
-      setPage('history');
-      fetchLeaves();
-    } catch (err) {
-      setError('Unable to submit leave.');
-      console.error(err);
-    }
+    const allLeaves = readLeaves();
+    const newLeave = {
+      id: Date.now().toString(),
+      submittedBy: user.username,
+      name: user.name,
+      dept: user.dept,
+      type: form.type,
+      from: form.from,
+      to: form.to,
+      reason: form.reason,
+      status: 'Pending'
+    };
+
+    const nextLeaves = [...allLeaves, newLeave];
+    saveLeaves(nextLeaves);
+    setForm(initialForm);
+    setPage('history');
+    loadLeaves();
   };
 
-  const updateStatus = async (id, status) => {
-    try {
-      await fetch(`${apiBase}/leaves/${id}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
-      });
-      fetchLeaves();
-    } catch (err) {
-      console.error(err);
-    }
+  const updateStatus = (id, status) => {
+    const allLeaves = readLeaves();
+    const updatedLeaves = allLeaves.map((leave) =>
+      leave.id === id ? { ...leave, status } : leave
+    );
+    saveLeaves(updatedLeaves);
+    loadLeaves();
   };
 
   const stats = useMemo(() => {
