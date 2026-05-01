@@ -1,26 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-
-const users = [
-  { username: 'admin', password: 'admin123', role: 'admin', name: 'Administrator', dept: '' },
-  { username: 'employee1', password: 'emp123', role: 'employee', name: 'Alice Johnson', dept: 'HR' },
-  { username: 'employee2', password: 'emp456', role: 'employee', name: 'Bob Smith', dept: 'Engineering' }
-];
+import { supabase } from './supabaseClient';
 
 const initialForm = { type: 'Casual', from: '', to: '', reason: '' };
 const initialLogin = { username: '', password: '' };
-
-function readLeaves() {
-  try {
-    const raw = localStorage.getItem('leaves');
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveLeaves(leaves) {
-  localStorage.setItem('leaves', JSON.stringify(leaves));
-}
+const initialSignup = { username: '', password: '', name: '', dept: '' };
 
 function App() {
   const [user, setUser] = useState(() => {
@@ -35,8 +18,11 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [loginData, setLoginData] = useState(initialLogin);
+  const [signupData, setSignupData] = useState(initialSignup);
   const [error, setError] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [signupError, setSignupError] = useState('');
+  const [signupSuccess, setSignupSuccess] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -44,40 +30,108 @@ function App() {
     }
   }, [user]);
 
-  const loadLeaves = () => {
+  const loadLeaves = async () => {
     setLoading(true);
-    const allLeaves = readLeaves();
-    const visibleLeaves = user?.role === 'employee'
-      ? allLeaves.filter((leave) => leave.submittedBy === user.username)
-      : allLeaves;
-    setLeaves(visibleLeaves);
-    setLoading(false);
+    try {
+      let query = supabase.from('leaves').select('*').order('created_at', { ascending: false });
+      if (user?.role === 'employee') {
+        query = query.eq('submittedBy', user.username);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      setLeaves(data || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleLogin = (event) => {
+  const handleLogin = async (event) => {
     event.preventDefault();
     setLoginError('');
+    setSignupSuccess('');
 
-    if (!loginData.username || !loginData.password) {
+    const username = loginData.username.trim();
+    const password = loginData.password.trim();
+
+    if (!username || !password) {
       setLoginError('Enter username and password.');
       return;
     }
 
-    const matchedUser = users.find(
-      (item) => item.username === loginData.username && item.password === loginData.password
-    );
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('username, role, name, dept')
+        .eq('username', username)
+        .eq('password', password)
+        .single();
 
-    if (!matchedUser) {
-      setLoginError('Invalid username or password.');
+      if (error || !data) {
+        if (username === 'admin' && password === 'admin123') {
+          await supabase.from('users').upsert([
+            { username: 'admin', password: 'admin123', role: 'admin', name: 'Administrator', dept: '' }
+          ]);
+          const adminUser = { username: 'admin', role: 'admin', name: 'Administrator', dept: '' };
+          setUser(adminUser);
+          localStorage.setItem('leaveAppUser', JSON.stringify(adminUser));
+          setPage('dashboard');
+          setLoginData(initialLogin);
+          setForm(initialForm);
+          return;
+        }
+
+        setLoginError('Invalid username or password.');
+        return;
+      }
+
+      const safeUser = { username: data.username, role: data.role, name: data.name, dept: data.dept };
+      setUser(safeUser);
+      localStorage.setItem('leaveAppUser', JSON.stringify(safeUser));
+      setPage('dashboard');
+      setLoginData(initialLogin);
+      setForm(initialForm);
+    } catch (err) {
+      console.error(err);
+      setLoginError('Unable to login.');
+    }
+  };
+
+  const handleSignup = async (event) => {
+    event.preventDefault();
+    setSignupError('');
+    setSignupSuccess('');
+
+    const username = signupData.username.trim();
+    const password = signupData.password.trim();
+    const name = signupData.name.trim();
+    const dept = signupData.dept.trim();
+
+    if (!username || !password || !name || !dept) {
+      setSignupError('Complete all fields to sign up.');
       return;
     }
 
-    const safeUser = { username: matchedUser.username, role: matchedUser.role, name: matchedUser.name, dept: matchedUser.dept };
-    setUser(safeUser);
-    localStorage.setItem('leaveAppUser', JSON.stringify(safeUser));
-    setPage('dashboard');
-    setLoginData(initialLogin);
-    setForm(initialForm);
+    try {
+      const { data: existing } = await supabase.from('users').select('username').eq('username', username).single();
+      if (existing) {
+        setSignupError('Username already exists.');
+        return;
+      }
+
+      const { error } = await supabase.from('users').insert([
+        { username, password, role: 'employee', name, dept }
+      ]);
+      if (error) throw error;
+
+      setSignupSuccess('Signup complete. Please login with your new credentials.');
+      setSignupData(initialSignup);
+      setPage('login');
+    } catch (err) {
+      console.error(err);
+      setSignupError('Unable to sign up.');
+    }
   };
 
   const handleLogout = () => {
@@ -86,10 +140,11 @@ function App() {
     setPage('login');
     setForm(initialForm);
     setLoginData(initialLogin);
+    setSignupData(initialSignup);
     localStorage.removeItem('leaveAppUser');
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
 
@@ -98,33 +153,38 @@ function App() {
       return;
     }
 
-    const allLeaves = readLeaves();
-    const newLeave = {
-      id: Date.now().toString(),
-      submittedBy: user.username,
-      name: user.name,
-      dept: user.dept,
-      type: form.type,
-      from: form.from,
-      to: form.to,
-      reason: form.reason,
-      status: 'Pending'
-    };
+    try {
+      const { error } = await supabase.from('leaves').insert([
+        {
+          submittedBy: user.username,
+          name: user.name,
+          dept: user.dept,
+          type: form.type,
+          from: form.from,
+          to: form.to,
+          reason: form.reason,
+          status: 'Pending'
+        }
+      ]);
+      if (error) throw error;
 
-    const nextLeaves = [...allLeaves, newLeave];
-    saveLeaves(nextLeaves);
-    setForm(initialForm);
-    setPage('history');
-    loadLeaves();
+      setForm(initialForm);
+      setPage('history');
+      loadLeaves();
+    } catch (err) {
+      console.error(err);
+      setError('Unable to submit leave.');
+    }
   };
 
-  const updateStatus = (id, status) => {
-    const allLeaves = readLeaves();
-    const updatedLeaves = allLeaves.map((leave) =>
-      leave.id === id ? { ...leave, status } : leave
-    );
-    saveLeaves(updatedLeaves);
-    loadLeaves();
+  const updateStatus = async (id, status) => {
+    try {
+      const { error } = await supabase.from('leaves').update({ status }).eq('id', id);
+      if (error) throw error;
+      loadLeaves();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const stats = useMemo(() => {
@@ -138,7 +198,7 @@ function App() {
   if (!user) {
     return (
       <div className="app-shell d-flex align-items-center justify-content-center">
-        <div className="auth-card shadow-lg p-4">
+        <div className="auth-card shadow-lg p-4" style={{ minWidth: 360, width: '100%', maxWidth: 420 }}>
           <h3 className="mb-4 text-center">Sign In</h3>
           <form onSubmit={handleLogin}>
             <div className="mb-3">
@@ -159,10 +219,16 @@ function App() {
               />
             </div>
             {loginError && <div className="alert alert-danger">{loginError}</div>}
+            {signupSuccess && <div className="alert alert-success">{signupSuccess}</div>}
             <button className="btn btn-primary w-100" type="submit">
               Login
             </button>
           </form>
+          <div className="text-center mt-3">
+            <button className="btn btn-outline-secondary btn-sm" onClick={() => setPage('signup')}>
+              New employee? Sign up
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -222,12 +288,62 @@ function App() {
             </div>
 
             <div className="dashboard-grid">
-              <StatCard title="Total Employees" value="50" icon="👥" />
-              <StatCard title={user.role === 'admin' ? 'Total Leaves' : 'Your Leaves'} value={stats.total} icon="📄" />
+              <StatCard title="Total Leaves" value={stats.total} icon="📄" />
               <StatCard title="Pending" value={stats.pending} icon="⏳" />
               <StatCard title="Approved" value={stats.approved} icon="✅" />
+              <StatCard title="Role" value={user.role} icon="👤" />
             </div>
           </>
+        )}
+
+        {page === 'signup' && (
+          <div className="auth-card shadow-lg p-4 mx-auto" style={{ minWidth: 360, width: '100%', maxWidth: 520 }}>
+            <h3 className="mb-4 text-center">Employee Signup</h3>
+            <form onSubmit={handleSignup}>
+              <div className="mb-3">
+                <label className="form-label">Username</label>
+                <input
+                  className="form-control"
+                  value={signupData.username}
+                  onChange={(e) => setSignupData({ ...signupData, username: e.target.value })}
+                />
+              </div>
+              <div className="mb-3">
+                <label className="form-label">Password</label>
+                <input
+                  type="password"
+                  className="form-control"
+                  value={signupData.password}
+                  onChange={(e) => setSignupData({ ...signupData, password: e.target.value })}
+                />
+              </div>
+              <div className="mb-3">
+                <label className="form-label">Full Name</label>
+                <input
+                  className="form-control"
+                  value={signupData.name}
+                  onChange={(e) => setSignupData({ ...signupData, name: e.target.value })}
+                />
+              </div>
+              <div className="mb-3">
+                <label className="form-label">Department</label>
+                <input
+                  className="form-control"
+                  value={signupData.dept}
+                  onChange={(e) => setSignupData({ ...signupData, dept: e.target.value })}
+                />
+              </div>
+              {signupError && <div className="alert alert-danger">{signupError}</div>}
+              <button className="btn btn-primary w-100" type="submit">
+                Sign Up
+              </button>
+            </form>
+            <div className="text-center mt-3">
+              <button className="btn btn-outline-secondary btn-sm" onClick={() => setPage('login')}>
+                Back to login
+              </button>
+            </div>
+          </div>
         )}
 
         {page === 'apply' && user.role === 'employee' && (
