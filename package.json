@@ -9,7 +9,7 @@
     "dev": "concurrently \"npm run server\" \"npm --workspace client run dev\"",
     "server": "nodemon server.js",
     "client": "npm --workspace client run dev",
-    "build": "npm --workspace client run build && node scripts/copy-dist.js",
+    "build": "cd client && npm run build && cd .. && node scripts/copy-dist.js",
     "start": "node server.js"
   },
   "dependencies": {
