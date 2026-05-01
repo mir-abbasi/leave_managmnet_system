@@ -2,5 +2,5 @@
   "builds": [
     { "src": "package.json", "use": "@vercel/static-build" }
   ],
-  "outputDirectory": "client/dist"
+  "outputDirectory": "dist"
 }
