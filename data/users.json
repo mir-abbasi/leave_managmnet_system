@@ -1,0 +1,23 @@
+[
+  {
+    "username": "admin",
+    "password": "admin123",
+    "role": "admin",
+    "name": "Administrator",
+    "dept": ""
+  },
+  {
+    "username": "employee1",
+    "password": "emp123",
+    "role": "employee",
+    "name": "Alice Johnson",
+    "dept": "HR"
+  },
+  {
+    "username": "employee2",
+    "password": "emp456",
+    "role": "employee",
+    "name": "Bob Smith",
+    "dept": "Engineering"
+  }
+]

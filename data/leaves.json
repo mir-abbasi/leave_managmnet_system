@@ -1,0 +1,12 @@
+[
+  {
+    "id": "1777665595625",
+    "name": "Qazi Absaar",
+    "dept": "CS",
+    "type": "Sick",
+    "from": "2026-05-02",
+    "to": "2026-05-04",
+    "reason": "Sick",
+    "status": "Approved"
+  }
+]
