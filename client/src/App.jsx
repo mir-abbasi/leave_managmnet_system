@@ -491,6 +491,12 @@ function App() {
           <div className="alert alert-warning">You need admin access to view this page.</div>
         )}
       </div>
+
+      <footer className="bg-dark text-white text-center py-3 mt-auto">
+        <div className="container">
+          <p className="mb-0">Project made by Shahmir Abbasi and Adnan Khattak</p>
+        </div>
+      </footer>
     </div>
   );
 }
