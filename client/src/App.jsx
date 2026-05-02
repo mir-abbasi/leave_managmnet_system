@@ -1,9 +1,29 @@
 import { useEffect, useMemo, useState } from 'react';
-import { supabase } from './supabaseClient';
+
+const users = [
+  { username: 'admin', password: 'qaziabsaar', role: 'admin', name: 'Administrator', dept: '' },
+  { username: 'shahmir', password: 'absaarnayoskemarihun', role: 'employee', name: 'Shahmir', dept: 'HR' },
+  { username: 'user2', password: 'pass123', role: 'employee', name: 'Ahmed Khan', dept: 'Engineering' },
+  { username: 'user3', password: 'pass456', role: 'employee', name: 'Fatima Ali', dept: 'Finance' },
+  { username: 'user4', password: 'pass789', role: 'employee', name: 'Hassan Omar', dept: 'Operations' }
+];
 
 const initialForm = { type: 'Casual', from: '', to: '', reason: '' };
 const initialLogin = { username: '', password: '' };
 const initialSignup = { username: '', password: '', name: '', dept: '' };
+
+function readLeaves() {
+  try {
+    const raw = localStorage.getItem('leaves');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLeaves(leaves) {
+  localStorage.setItem('leaves', JSON.stringify(leaves));
+}
 
 function App() {
   const [user, setUser] = useState(() => {
@@ -30,24 +50,17 @@ function App() {
     }
   }, [user]);
 
-  const loadLeaves = async () => {
+  const loadLeaves = () => {
     setLoading(true);
-    try {
-      let query = supabase.from('leaves').select('*').order('created_at', { ascending: false });
-      if (user?.role === 'employee') {
-        query = query.eq('submittedBy', user.username);
-      }
-      const { data, error } = await query;
-      if (error) throw error;
-      setLeaves(data || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    const allLeaves = readLeaves();
+    const visibleLeaves = user?.role === 'employee'
+      ? allLeaves.filter((leave) => leave.submittedBy === user.username)
+      : allLeaves;
+    setLeaves(visibleLeaves);
+    setLoading(false);
   };
 
-  const handleLogin = async (event) => {
+  const handleLogin = (event) => {
     event.preventDefault();
     setLoginError('');
     setSignupSuccess('');
@@ -60,45 +73,24 @@ function App() {
       return;
     }
 
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('username, role, name, dept')
-        .eq('username', username)
-        .eq('password', password)
-        .single();
+    const matchedUser = users.find(
+      (item) => item.username === username && item.password === password
+    );
 
-      if (error || !data) {
-        if (username === 'admin' && password === 'admin123') {
-          await supabase.from('users').upsert([
-            { username: 'admin', password: 'admin123', role: 'admin', name: 'Administrator', dept: '' }
-          ]);
-          const adminUser = { username: 'admin', role: 'admin', name: 'Administrator', dept: '' };
-          setUser(adminUser);
-          localStorage.setItem('leaveAppUser', JSON.stringify(adminUser));
-          setPage('dashboard');
-          setLoginData(initialLogin);
-          setForm(initialForm);
-          return;
-        }
-
-        setLoginError('Invalid username or password.');
-        return;
-      }
-
-      const safeUser = { username: data.username, role: data.role, name: data.name, dept: data.dept };
-      setUser(safeUser);
-      localStorage.setItem('leaveAppUser', JSON.stringify(safeUser));
-      setPage('dashboard');
-      setLoginData(initialLogin);
-      setForm(initialForm);
-    } catch (err) {
-      console.error(err);
-      setLoginError('Unable to login.');
+    if (!matchedUser) {
+      setLoginError('Invalid username or password.');
+      return;
     }
+
+    const safeUser = { username: matchedUser.username, role: matchedUser.role, name: matchedUser.name, dept: matchedUser.dept };
+    setUser(safeUser);
+    localStorage.setItem('leaveAppUser', JSON.stringify(safeUser));
+    setPage('dashboard');
+    setLoginData(initialLogin);
+    setForm(initialForm);
   };
 
-  const handleSignup = async (event) => {
+  const handleSignup = (event) => {
     event.preventDefault();
     setSignupError('');
     setSignupSuccess('');
@@ -113,25 +105,16 @@ function App() {
       return;
     }
 
-    try {
-      const { data: existing } = await supabase.from('users').select('username').eq('username', username).single();
-      if (existing) {
-        setSignupError('Username already exists.');
-        return;
-      }
-
-      const { error } = await supabase.from('users').insert([
-        { username, password, role: 'employee', name, dept }
-      ]);
-      if (error) throw error;
-
-      setSignupSuccess('Signup complete. Please login with your new credentials.');
-      setSignupData(initialSignup);
-      setPage('login');
-    } catch (err) {
-      console.error(err);
-      setSignupError('Unable to sign up.');
+    const existing = users.find((u) => u.username === username);
+    if (existing) {
+      setSignupError('Username already exists.');
+      return;
     }
+
+    users.push({ username, password, role: 'employee', name, dept });
+    setSignupSuccess('Signup complete. Please login with your new credentials.');
+    setSignupData(initialSignup);
+    setPage('login');
   };
 
   const handleLogout = () => {
@@ -144,7 +127,7 @@ function App() {
     localStorage.removeItem('leaveAppUser');
   };
 
-  const handleSubmit = async (event) => {
+  const handleSubmit = (event) => {
     event.preventDefault();
     setError('');
 
@@ -153,38 +136,33 @@ function App() {
       return;
     }
 
-    try {
-      const { error } = await supabase.from('leaves').insert([
-        {
-          submittedBy: user.username,
-          name: user.name,
-          dept: user.dept,
-          type: form.type,
-          from: form.from,
-          to: form.to,
-          reason: form.reason,
-          status: 'Pending'
-        }
-      ]);
-      if (error) throw error;
+    const allLeaves = readLeaves();
+    const newLeave = {
+      id: Date.now().toString(),
+      submittedBy: user.username,
+      name: user.name,
+      dept: user.dept,
+      type: form.type,
+      from: form.from,
+      to: form.to,
+      reason: form.reason,
+      status: 'Pending'
+    };
 
-      setForm(initialForm);
-      setPage('history');
-      loadLeaves();
-    } catch (err) {
-      console.error(err);
-      setError('Unable to submit leave.');
-    }
+    const nextLeaves = [...allLeaves, newLeave];
+    saveLeaves(nextLeaves);
+    setForm(initialForm);
+    setPage('history');
+    loadLeaves();
   };
 
-  const updateStatus = async (id, status) => {
-    try {
-      const { error } = await supabase.from('leaves').update({ status }).eq('id', id);
-      if (error) throw error;
-      loadLeaves();
-    } catch (err) {
-      console.error(err);
-    }
+  const updateStatus = (id, status) => {
+    const allLeaves = readLeaves();
+    const updatedLeaves = allLeaves.map((leave) =>
+      leave.id === id ? { ...leave, status } : leave
+    );
+    saveLeaves(updatedLeaves);
+    loadLeaves();
   };
 
   const stats = useMemo(() => {
