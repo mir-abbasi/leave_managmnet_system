@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 
 const users = [
-  { username: 'admin', password: 'qaziabsaar', role: 'admin', name: 'Administrator', dept: '' },
+  { username: 'admin', password: 'admin123', role: 'admin', name: 'Administrator', dept: '' },
   { username: 'shahmir', password: 'absaarnayoskemarihun', role: 'employee', name: 'Shahmir', dept: 'HR' },
-  { username: 'user2', password: 'pass123', role: 'employee', name: 'Ahmed Khan', dept: 'Engineering' },
+  { username: 'user2', password: 'user123', role: 'employee', name: 'Ahmed Khan', dept: 'Engineering' },
   { username: 'user3', password: 'pass456', role: 'employee', name: 'Fatima Ali', dept: 'Finance' },
   { username: 'user4', password: 'pass789', role: 'employee', name: 'Hassan Omar', dept: 'Operations' }
 ];
